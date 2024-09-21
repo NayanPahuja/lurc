@@ -51,7 +51,7 @@ This project is an attempt to make a command-line client (like cURL) built in C+
 To run the HTTP client, use the following command format:
 
 ```bash
-./lurc [-v] [-X <method>] [-H <header>] [-d <data>] <URL>
+./lurc [-v] [-X <method>] [-H <header>] [-d <data>] [-o <file_name>]<URL>
 ```
 
 #### Command-Line Options
@@ -82,6 +82,11 @@ To run the HTTP client, use the following command format:
    ./lurc -v http://eu.httpbin.org/get
    ```
 
+4. **Downloading an Image**:
+    ```bash
+    ./lurc -o test.jpg http://www.keycdn.com/img/example.jpg
+    ```
+
 ### Error Handling
 
 - If an invalid URL or port is provided, the program will display an appropriate error message.
@@ -99,8 +104,12 @@ responses.
 Contributions are welcome!
 
 ## Roadmap
+- Add HEAD and PATCH method in HTTP.
+- Add handling of keep alive and using it to send multiple requests over the same TCP connection.
+- Add the ability to continue downloads by adding a flag like in curl -.
+- Add SSL and support for HTTPS.
+- Add functionality depending on status codes such as Redirection etc.
 
-- I am going to try to add SSL and support for HTTPS from there onwards.
 - Any vulnerabilities or improvement suggestions are always welcome!
 
 ## License
