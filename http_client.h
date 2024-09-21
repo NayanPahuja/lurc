@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <fstream>
 
 /// @brief Enumeration of supported HTTP methods.
 enum class HttpMethod {
@@ -32,6 +33,7 @@ struct HttpRequest {
     ParsedUrl url;
     std::map<std::string, std::string> headers;
     std::string data;
+    std::string outputFile;
 };
 
 
@@ -59,4 +61,5 @@ public:
 /// @return The HTTP response received from the server.
 /// @throws runtime_error if any error occurs during the request.
     static HttpResponse sendRequest(const HttpRequest& request, bool verbose);
+    static void downloadFile(const HttpRequest& request, bool verbose);
 };

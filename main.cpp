@@ -26,7 +26,7 @@ HttpMethod parseMethod(const std::string& methodStr) {
 /// @return 0 on success, 1 on failure.
 int main(int argc, char *argv[]) {
     if (argc < 2) {
-        std::cerr << "Usage: " << argv[0] << " [-v] [-X <method>] [-H <header>] [-d <data>] <URL>" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " [-v] [-X <method>] [-H <header>] [-d <data>] [-o <output_file>] <URL>" << std::endl;
         return 1;
     }
 
@@ -72,7 +72,16 @@ int main(int argc, char *argv[]) {
                 std::cerr << "Error: -d option requires a data argument." << std::endl;
                 return 1;
             }
-        } else {
+        } else if (strcmp(argv[i], "-o") == 0) {
+            if(i + 1 < argc) {
+                request.outputFile = argv[++i];
+            } else {
+                std::cerr << "Error: -o option requires an output file argument." << std::endl;
+                return 1;
+            }
+        }
+        
+         else {
             request.url = UrlParser::parse(argv[i]);
         }
     }
@@ -91,10 +100,12 @@ int main(int argc, char *argv[]) {
     }
 
     try {
-        std::string requestStr = HttpClient::generateRequest(request);
-        HttpResponse response = HttpClient::sendRequest(request, verbose);
-
-        std::cout << response.body;
+        if(!request.outputFile.empty()) {
+            HttpClient::downloadFile(request,verbose);
+        } else {
+            HttpResponse response = HttpClient::sendRequest(request, verbose);
+            std::cout << response.body;
+        }
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
         return 1;

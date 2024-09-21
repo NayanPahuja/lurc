@@ -8,6 +8,10 @@
 #include <netdb.h>
 #include <iostream>
 #include <sstream>
+#include <ostream>
+#include <fstream>
+
+
 
 
 
@@ -123,3 +127,77 @@ HttpResponse HttpClient::sendRequest(const HttpRequest& request, bool verbose) {
 
 }
 
+
+void HttpClient::downloadFile(const HttpRequest& request, bool verbose) {
+    std::string requestStr = generateRequest(request);
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock == -1) {
+        throw std::runtime_error("Failed to create socket!");
+    }
+    
+    struct hostent *host = gethostbyname(request.url.host.c_str());
+    if (host == NULL) {
+        close(sock);
+        throw std::runtime_error("Failed to resolve hostname");
+    }
+
+    struct sockaddr_in server_addr;
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(request.url.port);
+    server_addr.sin_addr = *((struct in_addr *)host->h_addr);
+
+    if (connect(sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+        close(sock);
+        throw std::runtime_error("Connection failed");
+    }
+
+    if (verbose) {
+        std::cout << "> " << requestStr.substr(0, requestStr.find("\r\n")) << std::endl;
+        std::istringstream iss(requestStr);
+        std::string line;
+        std::getline(iss, line); // skip the first line
+        while (std::getline(iss, line) && !line.empty()) {
+            std::cout << "> " << line << std::endl;
+        }
+        std::cout << "> " << std::endl;
+    }
+
+    if (send(sock, requestStr.c_str(), requestStr.length(), 0) < 0) {
+        close(sock);
+        throw std::runtime_error("Failed to send Request!");
+    }
+    
+    std::ofstream outFile(request.outputFile, std::ios::binary);
+    if (!outFile) {
+        close(sock);
+        throw std::runtime_error("Failed to open output file: " + request.outputFile);
+    }
+
+    char buffer[4096];
+    int bytes_received;
+    bool headers_done = false;
+    std::string header_buffer;
+
+    while ((bytes_received = recv(sock, buffer, sizeof(buffer), 0)) > 0) {
+        if (!headers_done) {
+            header_buffer.append(buffer, bytes_received);
+            size_t header_end = header_buffer.find("\r\n\r\n");
+            if (header_end != std::string::npos) {
+                headers_done = true;
+                if (verbose) {
+                    std::cout << header_buffer.substr(0, header_end) << std::endl;
+                }
+                outFile.write(buffer + header_end + 4, bytes_received - (header_end + 4));
+            }
+        } else {
+            outFile.write(buffer, bytes_received);
+        }
+    }
+
+    close(sock);
+    outFile.close();
+
+    if (verbose) {
+        std::cout << "File downloaded successfully: " << request.outputFile << std::endl;
+    }
+}
