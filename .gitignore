@@ -1,0 +1,50 @@
+# Build directories
+/build/
+/bin/
+/lib/
+
+# CMake files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# Doxygen output 
+docs/
+/html/
+/latex/
+/man/
+/rtf/
+/xml/
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Compiler files
+*.o
+*.obj
+*.so
+*.a
+*.exe
+*.out
+
+# Backup files
+*~
+
+# Editor files (VS Code, Vim, Emacs, etc.)
+.vscode/
+.idea/
+*.swp
+*.swo
+*.swn
+*.bak
+*.orig
+*.DS_Store
+*.directory
+
+
+# Windows specific
+Thumbs.db
+*.stackdump
