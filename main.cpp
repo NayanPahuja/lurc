@@ -99,17 +99,19 @@ int main(int argc, char *argv[]) {
         request.headers["Connection"] = "close";
     }
 
-    try {
+     try {
+        HttpClient client;
         if(!request.outputFile.empty()) {
-            HttpClient::downloadFile(request,verbose);
+           client.downloadFile(request, verbose);
         } else {
-            HttpResponse response = HttpClient::sendRequest(request, verbose);
+            HttpResponse response = client.sendRequest(request, verbose);
             std::cout << response.body;
         }
-    } catch (const std::exception& e) {
+    } catch (const std::exception& e) { 
         std::cerr << "Error: " << e.what() << std::endl;
         return 1;
     }
+
 
     return 0;
 }

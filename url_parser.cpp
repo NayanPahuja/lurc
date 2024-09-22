@@ -3,13 +3,25 @@
 #include <stdexcept>
 #include <limits>
 
+
+
+std::uint16_t UrlParser::getDefaultPort(const std::string & protocol) {
+    // Use the `find` method to safely access the port number associated with the protocol.
+    auto it = protocolToPort.find(protocol);
+    if (it != protocolToPort.end()) {
+        return it->second;
+    }
+    // Return a default port value if the protocol is not found.
+    throw std::runtime_error("Unknown protocol: " + protocol);
+}
+
 /// @brief Validates and converts a port string to a uint16_t value.
 /// @param portStr The port string from the URL.
-/// @return The validated port number or the default port (80) if the string is empty.
+/// @return The validated port number or the default port (80)/(443) if the string is empty.
 /// @throws runtime_error if the port number is invalid or out of range.
-uint16_t UrlParser::validatePort(const std::string& portStr) {
+uint16_t UrlParser::validatePort(const std::string &protocol, const std::string& portStr) {
     if (portStr.empty()) {
-        return 80;  // Default HTTP port
+        return getDefaultPort(protocol);  // Default port of that protocl
     }
 
     try {
@@ -29,13 +41,14 @@ uint16_t UrlParser::validatePort(const std::string& portStr) {
 /// @throws runtime_error if the URL format is invalid.
 ParsedUrl UrlParser::parse(const std::string& url) {
     ParsedUrl result;
-    std::regex urlRegex("(http)://([^/ :]+):?([^/ ]*)(/?[^ #?]*)");
+    //change the regex for https
+    std::regex urlRegex("(https?)://([^/ :]+):?([^/ ]*)(/?[^ #?]*)");
     std::smatch match;
 
     if (std::regex_match(url, match, urlRegex)) {
         result.protocol = match[1];
         result.host = match[2];
-        result.port = validatePort(match[3]);
+        result.port = validatePort(result.protocol,match[3]);
         //Can be made into a ternary operation! TODO!
         if(match[4].length() == 0) {
             result.path = "/";

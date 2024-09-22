@@ -10,8 +10,129 @@
 #include <sstream>
 #include <ostream>
 #include <fstream>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 
 
+
+
+HttpClient::HttpClient() : ctx(nullptr) {
+    initSSL();   
+}
+
+HttpClient::~HttpClient() {
+    cleanSSL();   
+}
+
+void HttpClient::initSSL() {
+    SSL_library_init();
+    OpenSSL_add_all_algorithms();
+    SSL_load_error_strings();
+    const SSL_METHOD *method = TLS_client_method();
+    ctx = SSL_CTX_new(method);
+    if(!ctx) {
+        throw std::runtime_error("Failed to create an SSL context");
+    }
+    SSL_CTX_set_verify(ctx,SSL_VERIFY_PEER,nullptr);
+    SSL_CTX_set_verify_depth(ctx,4);
+    SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_TLSv1 | SSL_OP_NO_TLSv1_1);
+
+    if (!SSL_CTX_set_default_verify_paths(ctx)) {
+        throw std::runtime_error("Failed to set default verify paths");
+    }
+}
+
+void HttpClient::cleanSSL() {
+    if (ctx) {
+        SSL_CTX_free(ctx);
+        ctx = nullptr;
+    }
+}
+
+
+SSL* HttpClient::createSSLConnection(int socket, const std::string &hostname) {
+    SSL* ssl = SSL_new(ctx);
+    if(!ssl) {
+        throw std::runtime_error("Failed to create SSL structure");
+    }
+
+    SSL_set_fd(ssl,socket);
+    SSL_set_tlsext_host_name(ssl, hostname.c_str());
+
+    if (SSL_connect(ssl) != 1) {
+        SSL_free(ssl);
+        throw std::runtime_error("Failed to establish SSL connection");
+    }
+
+    if (!verifySSLCert(ssl,hostname)){
+        SSL_free(ssl);
+        throw std::runtime_error("SSL Certificate Verification Failed");
+    }
+
+    return ssl;
+}
+
+bool HttpClient::verifySSLCert(SSL* ssl, const std::string& hostname) {
+    X509* cert = SSL_get_peer_certificate(ssl);
+    if (!cert) {
+        return false;
+    }
+
+    int result = X509_check_host(cert,hostname.c_str(), hostname.length(),0,nullptr);
+    X509_free(cert);
+    return result == 1;
+    
+}
+
+
+void HttpClient::handleSSLError(SSL *ssl, int result) {
+    int error = SSL_get_error(ssl,result);
+    switch (error) {
+        case SSL_ERROR_WANT_READ:
+        case SSL_ERROR_WANT_WRITE:
+            // Non-blocking IO, you might want to wait and retry
+            break;
+        case SSL_ERROR_ZERO_RETURN:
+            // Connection closed
+            throw std::runtime_error("SSL connection closed");
+        case SSL_ERROR_SYSCALL:
+        case SSL_ERROR_SSL:
+            // Other SSL errors
+            throw std::runtime_error("SSL error: " + std::string(ERR_error_string(ERR_get_error(), nullptr)));
+        default:
+            throw std::runtime_error("Unknown SSL error");
+    }
+}
+
+
+int HttpClient::createSocket(const std::string& hostname, uint16_t port) {
+    struct hostent *host = gethostbyname(hostname.c_str());
+
+    if (!host) {
+        throw std::runtime_error("Failed to resolve the hostname");
+    }
+
+    int sock = socket(AF_INET,SOCK_STREAM,0);
+    if (sock == -1) {
+        throw std::runtime_error(
+            "Failed to create socket! "
+        );
+    }
+
+    struct sockaddr_in server_addr;
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(port);
+    server_addr.sin_addr = *((struct in_addr *)host->h_addr);
+
+
+    if (connect(sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+        close(sock);
+        throw std::runtime_error(
+            "Connection failed"
+        );
+    }
+    return sock;
+}
 
 
 
@@ -48,34 +169,11 @@ std::string HttpClient::generateRequest(const HttpRequest& request) {
 /// @throws runtime_error if socket creation, connection, or data transmission fails.
 HttpResponse HttpClient::sendRequest(const HttpRequest& request, bool verbose) {
     std::string requestStr = generateRequest(request);
-    int sock = socket(AF_INET,SOCK_STREAM,0);
-    if (sock == -1) {
-        throw std::runtime_error(
-            "Failed to create socket! "
-        );
+    int sock = createSocket(request.url.host,request.url.port);
+    SSL* ssl = nullptr;
+    if(request.url.protocol == "https") {
+        ssl = this->createSSLConnection(sock,request.url.host);
     }
-    
-    struct hostent *host = gethostbyname(request.url.host.c_str());
-    if(host == NULL) {
-        close(sock);
-        throw std::runtime_error(
-            "Failed to resolve hostname"
-        );
-    }
-
-    struct sockaddr_in server_addr;
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(request.url.port);
-    server_addr.sin_addr = *((struct in_addr *)host->h_addr);
-
-
-    if (connect(sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
-        close(sock);
-        throw std::runtime_error(
-            "Connection failed"
-        );
-    }
-
     if (verbose) {
         std::cout <<"> " << requestStr.substr(0, requestStr.find("\r\n")) << std::endl;
         std::istringstream iss(requestStr);
@@ -87,23 +185,57 @@ HttpResponse HttpClient::sendRequest(const HttpRequest& request, bool verbose) {
         std::cout << "> " << std::endl;
     }
 
-    if (send(sock, requestStr.c_str(),requestStr.length(),0) < 0) {
+    if(ssl) {
+        if(SSL_write(ssl,requestStr.c_str(),requestStr.length()) <= 0) {
+            this->handleSSLError(ssl,0);
+        }
+    }
+    else {
+        if (send(sock, requestStr.c_str(),requestStr.length(),0) < 0) {
         close(sock);
         throw std::runtime_error(
             "Failed to send Request!"
         );
+    
+        }
     }
+
+
     
     HttpResponse response;
     char buffer[4096];
-    int bytes_recieved;
-    bool headers_done = false;
+    int bytes_recieved; 
     std::string raw_response;
-    
-    while((bytes_recieved = recv(sock,buffer, sizeof(buffer),0)) > 0) {
-        raw_response.append(buffer,bytes_recieved);
-    }
 
+
+    while (true)
+    {
+        if(ssl) {
+            bytes_recieved  = SSL_read(ssl,buffer,sizeof(buffer));
+            if(bytes_recieved <= 0) {
+                int err = SSL_get_error(ssl,bytes_recieved);
+                if(err == SSL_ERROR_ZERO_RETURN) {
+                    break;
+                }
+                else {
+                    this->handleSSLError(ssl,bytes_recieved);
+                }
+            }
+        }
+        else {
+            bytes_recieved = recv(sock, buffer, sizeof(buffer), 0);
+            if (bytes_recieved <= 0) {
+                break;
+            }
+        }
+        raw_response.append(buffer, bytes_recieved);
+    }
+    
+    
+    if (ssl) {
+        SSL_shutdown(ssl);
+        SSL_free(ssl);
+    }
     close(sock);
 
     //Parse the raw response
@@ -130,46 +262,46 @@ HttpResponse HttpClient::sendRequest(const HttpRequest& request, bool verbose) {
 
 void HttpClient::downloadFile(const HttpRequest& request, bool verbose) {
     std::string requestStr = generateRequest(request);
-    int sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock == -1) {
-        throw std::runtime_error("Failed to create socket!");
-    }
-    
-    struct hostent *host = gethostbyname(request.url.host.c_str());
-    if (host == NULL) {
-        close(sock);
-        throw std::runtime_error("Failed to resolve hostname");
+    int sock = createSocket(request.url.host, request.url.port);
+    SSL* ssl = nullptr;
+
+    // Create SSL connection if protocol is HTTPS
+    if (request.url.protocol == "https") {
+        ssl = this->createSSLConnection(sock, request.url.host);
     }
 
-    struct sockaddr_in server_addr;
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(request.url.port);
-    server_addr.sin_addr = *((struct in_addr *)host->h_addr);
-
-    if (connect(sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
-        close(sock);
-        throw std::runtime_error("Connection failed");
-    }
-
+    // Verbose output of the request being sent
     if (verbose) {
         std::cout << "> " << requestStr.substr(0, requestStr.find("\r\n")) << std::endl;
         std::istringstream iss(requestStr);
         std::string line;
-        std::getline(iss, line); // skip the first line
+        std::getline(iss, line); // Skip the first line
         while (std::getline(iss, line) && !line.empty()) {
             std::cout << "> " << line << std::endl;
         }
         std::cout << "> " << std::endl;
     }
 
-    if (send(sock, requestStr.c_str(), requestStr.length(), 0) < 0) {
-        close(sock);
-        throw std::runtime_error("Failed to send Request!");
+    // Send the request using SSL or plain socket
+    if (ssl) {
+        if (SSL_write(ssl, requestStr.c_str(), requestStr.length()) <= 0) {
+            this->handleSSLError(ssl, 0);
+        }
+    } else {
+        if (send(sock, requestStr.c_str(), requestStr.length(), 0) < 0) {
+            close(sock);
+            throw std::runtime_error("Failed to send Request!");
+        }
     }
-    
+
+    // Open the output file to write the response body
     std::ofstream outFile(request.outputFile, std::ios::binary);
     if (!outFile) {
         close(sock);
+        if (ssl) {
+            SSL_shutdown(ssl);
+            SSL_free(ssl);
+        }
         throw std::runtime_error("Failed to open output file: " + request.outputFile);
     }
 
@@ -178,25 +310,57 @@ void HttpClient::downloadFile(const HttpRequest& request, bool verbose) {
     bool headers_done = false;
     std::string header_buffer;
 
-    while ((bytes_received = recv(sock, buffer, sizeof(buffer), 0)) > 0) {
+    // Receive the response
+    while (true) {
+        if (ssl) {
+            bytes_received = SSL_read(ssl, buffer, sizeof(buffer));
+            if (bytes_received <= 0) {
+                int err = SSL_get_error(ssl, bytes_received);
+                if (err == SSL_ERROR_ZERO_RETURN) {
+                    break; // SSL connection closed cleanly
+                } else {
+                    this->handleSSLError(ssl, bytes_received);
+                }
+            }
+        } else {
+            bytes_received = recv(sock, buffer, sizeof(buffer), 0);
+            if (bytes_received <= 0) {
+                break;
+            }
+        }
+
+        // Process headers and write the response body to the file
         if (!headers_done) {
             header_buffer.append(buffer, bytes_received);
             size_t header_end = header_buffer.find("\r\n\r\n");
             if (header_end != std::string::npos) {
                 headers_done = true;
                 if (verbose) {
-                    std::cout << header_buffer.substr(0, header_end) << std::endl;
+                    std::istringstream headerStream(header_buffer.substr(0, header_end));
+                    std::string line;
+                    while (std::getline(headerStream, line)) {
+                        std::cout << "< " << line << std::endl;
+                    }
+                    std::cout << "< " << std::endl;
                 }
+                // Write body part after headers
                 outFile.write(buffer + header_end + 4, bytes_received - (header_end + 4));
             }
         } else {
+            // Headers are done, write the rest of the body directly
             outFile.write(buffer, bytes_received);
         }
     }
 
+    // Clean up SSL and socket resources
+    if (ssl) {
+        SSL_shutdown(ssl);
+        SSL_free(ssl);
+    }
     close(sock);
     outFile.close();
 
+    // Verbose message on successful download
     if (verbose) {
         std::cout << "File downloaded successfully: " << request.outputFile << std::endl;
     }
