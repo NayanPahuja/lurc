@@ -9,6 +9,9 @@ This project is an attempt to make a command-line client (like cURL) built in C+
 
 ## Features
 
+## BRANCH_INFO
+- This branch is currently working on providing https support using OpenSSL.
+
 - Supports HTTP methods: GET, POST, PUT, DELETE.
 - Allows setting custom headers and request data.
 - Verbose mode to display request and response details.
