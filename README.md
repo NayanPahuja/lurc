@@ -10,9 +10,7 @@ This project is an attempt to make a command-line client (like cURL) built in C+
 ## Features
 
 ## BRANCH_INFO
-- This branch is currently working on providing https support using OpenSSL.
-
-- Supports HTTP methods: GET, POST, PUT, DELETE.
+- Supports HTTP/HTTPS  methods: GET, POST, PUT, DELETE.
 - Allows setting custom headers and request data.
 - Verbose mode to display request and response details.
 - Validates URL formats and ports.
@@ -51,7 +49,7 @@ This project is an attempt to make a command-line client (like cURL) built in C+
 
 ### Usage
 
-To run the HTTP client, use the following command format:
+To run the HTTP/HTTPS  client, use the following command format:
 
 ```bash
 ./lurc [-v] [-X <method>] [-H <header>] [-d <data>] [-o <file_name>]<URL>
@@ -110,8 +108,8 @@ Contributions are welcome!
 - Add HEAD and PATCH method in HTTP.
 - Add handling of keep alive and using it to send multiple requests over the same TCP connection.
 - Add the ability to continue downloads by adding a flag like in curl -.
-- Add SSL and support for HTTPS.
-- Add functionality depending on status codes such as Redirection etc.
+- Add functionality depending on status codes such as Redirection etc. Use a flag `-L` to redirect location like curl.
+- Add a download progress bar (optional).
 
 - Any vulnerabilities or improvement suggestions are always welcome!
 

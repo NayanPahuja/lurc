@@ -3,7 +3,8 @@
     #include <map>
 
 
-
+    /// @brief Map used to get default protocl against port.
+    /// @return The default port against given protocol.
     const std::map<std::string, uint16_t> protocolToPort {
         {"http",80},
         {"https",443}

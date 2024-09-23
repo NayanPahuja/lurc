@@ -161,12 +161,7 @@ std::string HttpClient::generateRequest(const HttpRequest& request) {
 }   
 
 
-/// @brief Sends an HTTP request and receives the response from the server.
-/// @param parsedUrl The parsed URL struct containing the host and port.
-/// @param request The generated HTTP request string.
-/// @param verbose Flag indicating if verbose output should be printed.
-/// @return The HttpResponse struct containing the status, headers, and body of the response.
-/// @throws runtime_error if socket creation, connection, or data transmission fails.
+
 HttpResponse HttpClient::sendRequest(const HttpRequest& request, bool verbose) {
     std::string requestStr = generateRequest(request);
     int sock = createSocket(request.url.host,request.url.port);

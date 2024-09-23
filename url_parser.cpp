@@ -4,7 +4,13 @@
 #include <limits>
 
 
+///This can probably be improved by making a enum of existing/supported protocols. and map them to each other than assuming port exists in our map.
+///Should add a precheck in protocol only before getting and validating port.
 
+/// @brief Validates and converts a protocol string to a uint16_t value i.e the default port.
+/// @param protocol The port string from the URL.
+/// @return The default port `[HTTP:80]` or `[HTTPS:443]`against the given string
+/// @throws runtime_error if the port number is not a default port of an existing protocol
 std::uint16_t UrlParser::getDefaultPort(const std::string & protocol) {
     // Use the `find` method to safely access the port number associated with the protocol.
     auto it = protocolToPort.find(protocol);
