@@ -27,18 +27,3 @@ target_include_directories(lurc PUBLIC "${PROJECT_SOURCE_DIR}")
 # Optional: Add compiler options (e.g., warnings)
 target_compile_options(lurc PRIVATE -Wall -Wextra -pedantic)
 
-
-# Find Doxygen package
-find_package(Doxygen REQUIRED)
-
-# Set the Doxygen input and output directories
-set(DOXYGEN_IN ${CMAKE_CURRENT_SOURCE_DIR}/Doxyfile)
-set(DOXYGEN_OUT ${CMAKE_CURRENT_BINARY_DIR}/docs)
-
-# Configure a target for generating Doxygen documentation
-add_custom_target(doc_doxygen
-    COMMAND ${DOXYGEN_EXECUTABLE} ${DOXYGEN_IN}
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    COMMENT "Generating Doxygen documentation"
-    VERBATIM
-)

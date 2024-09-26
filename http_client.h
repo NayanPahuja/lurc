@@ -7,6 +7,9 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 
+const int maxRedirects = 5;
+
+
 /// @brief Enumeration of supported HTTP methods.
 enum class HttpMethod {
     GET,     ///< HTTP GET method for retrieving resources.
@@ -71,8 +74,8 @@ public:
     /// @param verbose Flag to enable verbose output of the request and response details.
     /// @return The HTTP response received from the server.
     /// @throws std::runtime_error if any error occurs during the request.
+    //HttpResponse sendRequest(const HttpRequest& request, bool verbose,bool followRedirects);
     HttpResponse sendRequest(const HttpRequest& request, bool verbose);
-
     /// @brief Downloads a file from the server using the specified HTTP request.
     /// @param request The HTTP request containing the file URL and download details.
     /// @param verbose Flag to enable verbose output of the download process.

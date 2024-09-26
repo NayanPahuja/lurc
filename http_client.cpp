@@ -12,9 +12,9 @@
 #include <fstream>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
-
-
-
+#include <regex>
+#include <string>
+#include <openssl/x509_vfy.h>
 
 HttpClient::HttpClient() : ctx(nullptr) {
     initSSL();   
@@ -73,15 +73,30 @@ SSL* HttpClient::createSSLConnection(int socket, const std::string &hostname) {
 }
 
 bool HttpClient::verifySSLCert(SSL* ssl, const std::string& hostname) {
+    // Retrieve the SSL context and X509 store
     X509* cert = SSL_get_peer_certificate(ssl);
     if (!cert) {
         return false;
     }
 
-    int result = X509_check_host(cert,hostname.c_str(), hostname.length(),0,nullptr);
-    X509_free(cert);
-    return result == 1;
+    // Get the verification parameters
+    X509_VERIFY_PARAM* param = SSL_get0_param(ssl);
     
+    // Set the hostname for verification
+    //This automatically invokes the X509_CHECK_HOST in the previous version
+    if (!X509_VERIFY_PARAM_set1_host(param, hostname.c_str(), hostname.length())) {
+        X509_free(cert);
+        return false;
+    }
+
+    // Perform verification
+    int result = SSL_get_verify_result(ssl);
+
+    // Clean up certificate
+    X509_free(cert);
+
+    // Check if the verification succeeded
+    return (result == X509_V_OK);
 }
 
 
@@ -162,8 +177,59 @@ std::string HttpClient::generateRequest(const HttpRequest& request) {
 
 
 
+// HttpResponse HttpClient::sendRequest(const HttpRequest& request, bool verbose, bool followRedirects) {
+//     int maxRedirects = 5;
+//     HttpRequest currentRequest = request;
+//     HttpResponse response;
+
+//     while (maxRedirects > 0) {
+//         response = sendSingleRequest(currentRequest, verbose);
+        
+//         // Parse status code
+//         std::string statusCode;
+//         std::regex pattern(R"(HTTP/\d+\.\d+\s+(\d{3}))");
+//         std::smatch match;
+//         if (std::regex_search(response.statusLine, match, pattern)) {
+//             statusCode = match[1];
+//         }
+
+//         if (followRedirects && (statusCode == "301" || statusCode == "302" || statusCode == "303" || statusCode == "307" || statusCode == "308")) {
+//             std::string location;
+//             for (const auto& header : response.headers) {
+//                 if (header.find("Location: ") == 0) {
+//                     location = header.substr(10);
+//                     break;
+//                 }
+//             }
+//             if (!location.empty()) {
+//                 currentRequest.url = UrlParser::parse(location);
+                
+//                 // Preserve the original method for 307 and 308 redirects
+//                 if (statusCode == "301" || statusCode == "302" || statusCode == "303") {
+//                     currentRequest.method = HttpMethod::GET;
+//                 }
+                
+//                 // Clear the request body for GET requests
+//                 if (currentRequest.method == HttpMethod::GET) {
+//                     currentRequest.data.clear();
+//                 }
+
+//                 if (verbose) {
+//                     std::cout << "Following redirect to: " << location << std::endl;
+//                 }
+//                 maxRedirects--;
+//             } else {
+//                 break; // No Location header found, stop redirecting
+//             }
+//         } else {
+//             break; // Not a redirect code
+//         }
+//     }
+//     return response;
+// }   
 HttpResponse HttpClient::sendRequest(const HttpRequest& request, bool verbose) {
     std::string requestStr = generateRequest(request);
+    std::cout << "REQUEST STRING: " << requestStr << std::endl;
     int sock = createSocket(request.url.host,request.url.port);
     SSL* ssl = nullptr;
     if(request.url.protocol == "https") {
@@ -232,12 +298,10 @@ HttpResponse HttpClient::sendRequest(const HttpRequest& request, bool verbose) {
         SSL_free(ssl);
     }
     close(sock);
-
     //Parse the raw response
     std::istringstream resposne_stream(raw_response);
     std::getline(resposne_stream,response.statusLine);
     if (verbose) std::cout << "< " << response.statusLine << std::endl;
-    
     std::string header;
     while(std::getline(resposne_stream,header) && header != "\r") {
         if(!header.empty() && header != "\r") {
@@ -251,9 +315,7 @@ HttpResponse HttpClient::sendRequest(const HttpRequest& request, bool verbose) {
     std::string body((std::istreambuf_iterator<char>(resposne_stream)), std::istreambuf_iterator<char>());
     response.body = body;
     return response;
-
 }
-
 
 void HttpClient::downloadFile(const HttpRequest& request, bool verbose) {
     std::string requestStr = generateRequest(request);
