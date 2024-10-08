@@ -229,7 +229,6 @@ std::string HttpClient::generateRequest(const HttpRequest& request) {
 // }   
 HttpResponse HttpClient::sendRequest(const HttpRequest& request, bool verbose) {
     std::string requestStr = generateRequest(request);
-    std::cout << "REQUEST STRING: " << requestStr << std::endl;
     int sock = createSocket(request.url.host,request.url.port);
     SSL* ssl = nullptr;
     if(request.url.protocol == "https") {
