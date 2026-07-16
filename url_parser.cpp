@@ -1,7 +1,16 @@
 #include "url_parser.h"
-#include <regex>
 #include <stdexcept>
 #include <limits>
+#include <algorithm>
+#include <cctype>
+
+namespace {
+bool hasWhitespace(const std::string& value) {
+    return std::any_of(value.begin(), value.end(), [](unsigned char c) {
+        return std::isspace(c);
+    });
+}
+}
 
 
 ///This can probably be improved by making a enum of existing/supported protocols. and map them to each other than assuming port exists in our map.
@@ -30,9 +39,13 @@ uint16_t UrlParser::validatePort(const std::string &protocol, const std::string&
         return getDefaultPort(protocol);  // Default port of that protocl
     }
 
+    if (!std::all_of(portStr.begin(), portStr.end(), [](unsigned char c) { return std::isdigit(c); })) {
+        throw std::runtime_error("Invalid port number: " + portStr);
+    }
+
     try {
         long port = std::stol(portStr);
-        if (port < 0 || port > std::numeric_limits<uint16_t>::max()) {
+        if (port <= 0 || port > std::numeric_limits<uint16_t>::max()) {
             throw std::out_of_range("Port number out of range");
         }
         return static_cast<uint16_t>(port);
@@ -47,23 +60,69 @@ uint16_t UrlParser::validatePort(const std::string &protocol, const std::string&
 /// @throws runtime_error if the URL format is invalid.
 ParsedUrl UrlParser::parse(const std::string& url) {
     ParsedUrl result;
-    //change the regex for https
-    std::regex urlRegex("(https?)://([^/ :]+):?([^/ ]*)(/?[^ #?]*)");
-    std::smatch match;
+    if (url.empty() || hasWhitespace(url)) {
+        throw std::runtime_error("INVALID URL FORMAT!");
+    }
 
-    if (std::regex_match(url, match, urlRegex)) {
-        result.protocol = match[1];
-        result.host = match[2];
-        result.port = validatePort(result.protocol,match[3]);
-        //Can be made into a ternary operation! TODO!
-        if(match[4].length() == 0) {
-            result.path = "/";
+    const std::size_t schemeSeparatorPos = url.find("://");
+    if (schemeSeparatorPos == std::string::npos || schemeSeparatorPos == 0) {
+        throw std::runtime_error("INVALID URL FORMAT!");
+    }
+
+    result.protocol = url.substr(0, schemeSeparatorPos);
+    std::transform(result.protocol.begin(), result.protocol.end(), result.protocol.begin(),
+        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (result.protocol != "http" && result.protocol != "https") {
+        throw std::runtime_error("Unknown protocol: " + result.protocol);
+    }
+
+    const std::size_t authorityStartPos = schemeSeparatorPos + 3;
+    const std::size_t authorityEndPos = url.find_first_of("/?#", authorityStartPos);
+    const std::string authority = url.substr(authorityStartPos, authorityEndPos - authorityStartPos);
+    if (authority.empty() || authority.find('@') != std::string::npos) {
+        throw std::runtime_error("INVALID URL FORMAT!");
+    }
+
+    std::string portStr;
+    if (authority.front() == '[') {
+        const std::size_t hostEndPos = authority.find(']');
+        if (hostEndPos == std::string::npos) {
+            throw std::runtime_error("INVALID URL FORMAT!");
         }
-        else {
-            result.path = match[4];
+        result.host = authority.substr(0, hostEndPos + 1);
+        if (hostEndPos + 1 < authority.size()) {
+            if (authority[hostEndPos + 1] != ':') {
+                throw std::runtime_error("INVALID URL FORMAT!");
+            }
+            portStr = authority.substr(hostEndPos + 2);
         }
     } else {
+        const std::size_t colonPos = authority.rfind(':');
+        if (colonPos != std::string::npos) {
+            result.host = authority.substr(0, colonPos);
+            portStr = authority.substr(colonPos + 1);
+        } else {
+            result.host = authority;
+        }
+    }
+
+    if (result.host.empty() || hasWhitespace(result.host)) {
         throw std::runtime_error("INVALID URL FORMAT!");
+    }
+    result.port = validatePort(result.protocol, portStr);
+
+    if (authorityEndPos == std::string::npos || url[authorityEndPos] == '#') {
+        result.path = "/";
+    } else {
+        const std::size_t fragmentPos = url.find('#', authorityEndPos);
+        result.path = url.substr(authorityEndPos, fragmentPos - authorityEndPos);
+        if (!result.path.empty() && result.path.front() == '?') {
+            result.path.insert(result.path.begin(), '/');
+        }
+    }
+
+    if (result.path.empty()) {
+        result.path = "/";
     }
 
     return result;

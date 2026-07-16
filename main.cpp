@@ -97,7 +97,12 @@ int main(int argc, char *argv[]) {
                 return 1;
             }
         } else {
-            request.url = UrlParser::parse(argv[i]);
+            try {
+                request.url = UrlParser::parse(argv[i]);
+            } catch (const std::exception& e) {
+                std::cerr << "Error: " << e.what() << std::endl;
+                return 1;
+            }
         }
     }
 
